@@ -1,80 +1,127 @@
+#include <stdbool.h>
 #include <stdio.h>
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "esp_system.h"
-#include "esp_spi_flash.h"
 
-static int __attribute__ ((noinline)) summ(int a, int b)
+#include "app_config.h"
+#include "core/message_queue.h"
+#include "os_log/os_log.h"
+#include "os_log/os_time.h"
+
+typedef struct
 {
-    int r = a + b;
-    return r;
-}
+    uint32_t sequence;
+    uint64_t timestamp_us;
+} TaskPayload;
 
-static void fibonacci_calc_once(void)
-/* calculation of 3 Fibonacci sequences: f0, f1 and f2
- * f(n) = f(n-1) + f(n-2) -> f(n) : 0, 1, 1, 2, 3, 5, 8, 13, 21, 34, ...*/
-{
+static MessageQueue g_main_queue;
 
-    volatile int f0_nm2, f1_nm2, f2_nm2; // n-2
-    volatile int f0_nm1, f1_nm1, f2_nm1; // n-1
-    volatile int f0_n, f1_n, f2_n; // n
-    // setting three starting state for each f sequence: n-2 points:
-    f0_nm2 = 0;
-    f1_nm2 = 1;
-    f2_nm2 = summ(1, 2);;
-    // setting three starting state for each f sequence: n-1 points:
-    f0_nm1 = 1;
-    f1_nm1 = 2;
-    f2_nm1 = 5;
-    //
-    f0_n = f0_nm1 + f0_nm2; // calculating f0_n
-    f0_nm2 = f0_nm1; // n shift
-    f0_nm1 = f0_n;
-    f1_n = f1_nm1 + f1_nm2; // calculating f1_n
-    f1_nm2 = f1_nm1; // n shift
-    f1_nm1 = f1_n;
-    f2_n = f2_nm1 + f2_nm2;
-    f2_nm2 = f2_nm1; // n shift// calculating f2_n
-    f2_nm1 = f2_n;
-}
-
-static void fibonacci_calc(void)
-/* calculation of 3 Fibonacci sequences: f0, f1 and f2
- * f(n) = f(n-1) + f(n-2) -> f(n) : 0, 1, 1, 2, 3, 5, 8, 13, 21, 34, ...*/
-{
-
-    volatile int f0_nm2, f1_nm2, f2_nm2; // n-2
-    volatile int f0_nm1, f1_nm1, f2_nm1; // n-1
-    volatile int f0_n, f1_n, f2_n; // n
-    // setting three starting state for each f sequence: n-2 points:
-    f0_nm2 = 0;
-    f1_nm2 = 1;
-    f2_nm2 = 3;
-    // setting three starting state for each f sequence: n-1 points:
-    f0_nm1 = 1;
-    f1_nm1 = 2;
-    f2_nm1 = 5;
-    while (1)
-    {
-        f0_n = f0_nm1 + f0_nm2; // calculating f0_n
-        f0_nm2 = f0_nm1; // n shift
-        f0_nm1 = f0_n;
-        f1_n = f1_nm1 + f1_nm2; // calculating f1_n
-        f1_nm2 = f1_nm1; // n shift
-        f1_nm1 = f1_n;
-        f2_n = f2_nm1 + f2_nm2;
-        f2_nm2 = f2_nm1; // n shift// calculating f2_n
-        f2_nm1 = f2_n;
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-    }
-}
+static void consumer_task(void *args);
+static void producer_task(void *args);
 
 void app_main(void)
 {
-    printf("Hello, Tester!\n");
-    printf("Simple calculating...");
-    fibonacci_calc_once();
-    printf("Ok. \nLet's calculate an infinite sequence!\n");
-    fibonacci_calc();
-    printf("You can't get here - the sequence is INFINITE!\n");
+    os_log_set_level(APP_CFG_LOG_LEVEL);
+
+    if (!message_queue_init(&g_main_queue, "main_queue", APP_CFG_MESSAGE_QUEUE_DEPTH))
+    {
+        OS_LOGE("APP", "Failed to initialize message queue");
+        return;
+    }
+
+    BaseType_t created = xTaskCreate(
+        consumer_task,
+        "task_main",
+        APP_CFG_CONSUMER_TASK_STACK,
+        NULL,
+        APP_CFG_CONSUMER_TASK_PRIO,
+        NULL);
+
+    if (created != pdPASS)
+    {
+        OS_LOGE("APP", "Failed to create consumer task");
+        return;
+    }
+
+    created = xTaskCreate(
+        producer_task,
+        "task_qr",
+        APP_CFG_PRODUCER_TASK_STACK,
+        NULL,
+        APP_CFG_PRODUCER_TASK_PRIO,
+        NULL);
+
+    if (created != pdPASS)
+    {
+        OS_LOGE("APP", "Failed to create producer task");
+    }
+}
+
+static void producer_task(void *args)
+{
+    (void)args;
+    uint32_t counter = 0U;
+    const TickType_t period_ticks = app_cfg_ms_to_ticks(APP_CFG_PRODUCER_PERIOD_MS);
+
+    while (true)
+    {
+        TaskPayload *payload = pvPortMalloc(sizeof(*payload));
+        if (payload == NULL)
+        {
+            OS_LOGW("QR", "Allocation failed, retrying");
+            vTaskDelay(period_ticks);
+            continue;
+        }
+
+        payload->sequence = ++counter;
+        payload->timestamp_us = os_time_get_cpu_time_us();
+
+        const Sender sender = sender_from_current_task();
+        const TickType_t timeout = app_cfg_ms_to_ticks(APP_CFG_QUEUE_TX_TIMEOUT_MS);
+        const bool sent = message_queue_send(&g_main_queue, sender, payload, timeout);
+
+        if (!sent)
+        {
+            OS_LOGW("QR", "Queue full, dropping seq %lu", (unsigned long)payload->sequence);
+            vPortFree(payload);
+        }
+        else
+        {
+            OS_LOGD("QR", "Sent seq %lu", (unsigned long)payload->sequence);
+        }
+
+        vTaskDelay(period_ticks);
+    }
+}
+
+static void consumer_task(void *args)
+{
+    (void)args;
+    Message message;
+
+    while (true)
+    {
+        if (message_queue_receive(&g_main_queue, &message, portMAX_DELAY))
+        {
+            TaskPayload *payload = (TaskPayload *)message.data;
+            const char *sender_name = (message.sender.name != NULL) ? message.sender.name : "unknown";
+
+            if (payload != NULL)
+            {
+                const uint32_t latency_ms = os_time_elapsed_ms(payload->timestamp_us);
+                OS_LOGI(
+                    "MAIN",
+                    "Received seq %lu from %s after %lu ms",
+                    (unsigned long)payload->sequence,
+                    sender_name,
+                    (unsigned long)latency_ms);
+                vPortFree(payload);
+            }
+            else
+            {
+                OS_LOGW("MAIN", "Received NULL payload from %s", sender_name);
+            }
+        }
+    }
 }
