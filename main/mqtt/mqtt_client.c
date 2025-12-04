@@ -1,17 +1,23 @@
-#include "mqtt_client.h"
+#include "mqtt_wrapper.h"
 #include "app_config.h"
 #include "os/os_log.h"
 
 const char *TAG = "MQTT";
 
 #ifdef CONFIG_IDF_TARGET_ESP32
-#include "mqtt_client.h"
+#include <mqtt_client.h>
+#include <esp_err.h>
+#include <esp_event.h>
 
 static esp_mqtt_client_handle_t s_mqtt = NULL;
 
-static esp_err_t _mqtt_event_handler_cb(esp_mqtt_event_handle_t event)
+static void _mqtt_event_handler_cb(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
-    switch (event->event_id)
+    (void)handler_args;
+    (void)base;
+    esp_mqtt_event_handle_t event = (esp_mqtt_event_handle_t)event_data;
+
+    switch ((esp_mqtt_event_id_t)event_id)
     {
     case MQTT_EVENT_DATA:
         if (event->data && event->topic)
@@ -19,26 +25,34 @@ static esp_err_t _mqtt_event_handler_cb(esp_mqtt_event_handle_t event)
             os_log_print(OS_LOG_LEVEL_INFO, TAG, "msg topic=%.*s len=%d", event->topic_len, event->topic, event->data_len);
         }
         break;
+    case MQTT_EVENT_CONNECTED:
+        os_log_print(OS_LOG_LEVEL_INFO, TAG, "MQTT connected");
+        break;
+    case MQTT_EVENT_DISCONNECTED:
+        os_log_print(OS_LOG_LEVEL_INFO, TAG, "MQTT disconnected");
+        break;
     default:
         break;
     }
-    return ESP_OK;
 }
 
 net_status_t mqtt_client_init_and_start(const mqtt_config_t *cfg)
 {
-    if (!cfg || !cfg->broker_uri)
+    if (!cfg || !cfg->broker_url)
         return NET_ERR;
+
     esp_mqtt_client_config_t mcfg = {
-        .uri = cfg->broker_uri,
-        .client_id = cfg->client_id,
-        .username = cfg->username,
-        .password = cfg->password,
+        .broker.address.uri = cfg->broker_url,
+        .credentials.client_id = cfg->client_id,
+        .credentials.username = cfg->username,
+        .credentials.authentication.password = cfg->password,
     };
+
     s_mqtt = esp_mqtt_client_init(&mcfg);
     if (!s_mqtt)
         return NET_ERR;
-    esp_mqtt_client_register_event(s_mqtt, ESP_EVENT_ANY_ID, (esp_mqtt_event_cb_t)_mqtt_event_handler_cb, NULL);
+
+    esp_mqtt_client_register_event(s_mqtt, ESP_EVENT_ANY_ID, _mqtt_event_handler_cb, NULL);
     esp_mqtt_client_start(s_mqtt);
     return NET_OK;
 }
@@ -76,7 +90,7 @@ net_status_t mqtt_subscribe(const char *topic, int qos, net_data_cb_t on_message
 net_status_t mqtt_client_init_and_start(const mqtt_config_t *cfg)
 {
     (void)cfg;
-    os_log_print(OS_LOG_LEVEL_WARNING, TAG, "mqtt not implemented on this platform");
+    os_log_print(OS_LOG_LEVEL_WARN, TAG, "mqtt not implemented on this platform");
     return NET_NOT_IMPLEMENTED;
 }
 void mqtt_client_stop(void) {}

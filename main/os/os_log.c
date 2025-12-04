@@ -4,7 +4,7 @@
 #include <stdarg.h>
 
 #include "app_config.h"
-#include "os_log/os_time.h"
+#include "os/os_time.h"
 
 #ifndef APP_CFG_LOG_LEVEL
 #define APP_CFG_LOG_LEVEL OS_LOG_LEVEL_INFO

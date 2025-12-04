@@ -1,5 +1,5 @@
-#ifndef MQTT_CLIENT_H
-#define MQTT_CLIENT_H
+#ifndef MQTT_WRAPPER_H
+#define MQTT_WRAPPER_H
 
 #include "net/net_client.h"
 #ifdef __cplusplus
@@ -58,4 +58,4 @@ extern "C"
 
 #endif
 
-#endif // MQTT_CLIENT_H
+#endif // MQTT_WRAPPER_H

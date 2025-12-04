@@ -2,8 +2,8 @@
 #include "app_config.h"
 #include "os/os_log.h"
 
-#include "stdlib.h"
-#include "string.h"
+#include <stdlib.h>
+#include <string.h>
 
 const char *TAG = "HTTP";
 
@@ -20,7 +20,9 @@ typedef struct
 
 static esp_err_t _esp_http_event_handler(esp_http_client_event_t *evt)
 {
-    _http_user_t *u = (_http_user_t *)esp_http_client_get_user_data(evt->client);
+    void *ud = NULL;
+    (void)esp_http_client_get_user_data(evt->client, &ud);
+    _http_user_t *u = (_http_user_t *)ud;
     switch (evt->event_id)
     {
     case HTTP_EVENT_ON_DATA:
@@ -56,8 +58,17 @@ net_status_t http_request_async(
     if (!client)
         return NET_ERR;
 
-    _http_user_t u = {.cb = on_response, .ctx = ctx, .url = url};
-    esp_http_client_set_user_data(client, &u);
+    /* allocate user context on heap because esp_http_client_perform is synchronous
+       and our local stack would be invalid after cleanup if event handler were asynchronous */
+    _http_user_t *u = (_http_user_t *)malloc(sizeof(*u));
+    if (!u) {
+        esp_http_client_cleanup(client);
+        return NET_ERR;
+    }
+    u->cb = on_response;
+    u->ctx = ctx;
+    u->url = url;
+    esp_http_client_set_user_data(client, u);
 
     if (strcasecmp(method, "POST") == 0)
     {
@@ -77,10 +88,12 @@ net_status_t http_request_async(
     {
         os_log_print(OS_LOG_LEVEL_ERROR, TAG, "HTTP request failed: %s", esp_err_to_name(err));
         esp_http_client_cleanup(client);
+        free(u);
         return NET_ERR;
     }
 
     esp_http_client_cleanup(client);
+    free(u);
     return NET_OK;
 }
 
@@ -142,32 +155,32 @@ net_status_t http_request_blocking(const char *method, const char *url, const ui
     esp_http_client_cleanup(client);
     return NET_OK;
 }
-else // Non-ESP32 platforms
+#else // Non-ESP32 platforms
 
-net_status_t http_request_async(const char* method, const char* url, const uint8_t *body, uint32_t timeout_ms, net_data_cb_t on_response, void *ctx)
+net_status_t http_request_async(const char *method, const char *url, const uint8_t *body, uint32_t timeout_ms, net_data_cb_t on_response, void *ctx)
 {
     (void)method; (void)url; (void)body; (void)timeout_ms; (void)on_response; (void)ctx;
-    os_log_print(OS_LOG_LEVEL_WARNING, "HTTP", "http_request_async: not implemented on this platform");
+    os_log_print(OS_LOG_LEVEL_WARN, "HTTP", "http_request_async: not implemented on this platform");
     return NET_NOT_IMPLEMENTED;
 }
 
-net_status_t http_request_blocking(const char* method, const char* url, const uint8_t *body, uint32_t timeout_ms, uint8_t **out_response, size_t *out_response_len)
+net_status_t http_request_blocking(const char *method, const char *url, const uint8_t *body, uint32_t timeout_ms, uint8_t **out_response, size_t *out_response_len)
 {
     (void)method; (void)url; (void)body; (void)timeout_ms; (void)out_response; (void)out_response_len;
-    os_log_print(OS_LOG_LEVEL_WARNING, "HTTP", "http_request_blocking: not implemented on this platform");
+    os_log_print(OS_LOG_LEVEL_WARN, "HTTP", "http_request_blocking: not implemented on this platform");
     return NET_NOT_IMPLEMENTED;
 }
 
 #endif
 
+/* Convenience wrappers ---------------------------------------------------- */
 net_status_t http_get_async(const char* url, uint32_t timeout_ms, net_data_cb_t on_response, void *ctx)
 {
     return http_request_async("GET", url, NULL, timeout_ms, on_response, ctx);
 }
 
-net_status_t http_post_async(const char* url, const uint8_t *body, size_t body_len, uint32_t timeout_ms, net_data_cb_t on_response, void *ctx)
+net_status_t http_post_async(const char* url, const uint8_t *body, uint32_t timeout_ms, net_data_cb_t on_response, void *ctx)
 {
-    (void)body_len; // esp_http_client_set_post_field infers length from string; caller should ensure body is NUL-terminated or adapt as needed
     return http_request_async("POST", url, body, timeout_ms, on_response, ctx);
 }
 
@@ -176,8 +189,7 @@ net_status_t http_get_blocking(const char* url, uint32_t timeout_ms, uint8_t **o
     return http_request_blocking("GET", url, NULL, timeout_ms, out_response, out_response_len);
 }
 
-net_status_t http_post_blocking(const char* url, const uint8_t *body, size_t body_len, uint32_t timeout_ms, uint8_t **out_response, size_t *out_response_len)
+net_status_t http_post_blocking(const char* url, const uint8_t *body, uint32_t timeout_ms, uint8_t **out_response, size_t *out_response_len)
 {
-    (void)body_len;
     return http_request_blocking("POST", url, body, timeout_ms, out_response, out_response_len);
 }
