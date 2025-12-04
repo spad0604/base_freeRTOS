@@ -1,2 +1,16 @@
-idf_component_register(SRCS "main.c" "core/message_queue.c" "os_log/os_time.c" "os_log/os_log.c"
-                    INCLUDE_DIRS ".")
+idf_component_register(
+    SRCS
+        "main.c"
+        "app_config.c"
+        "core/message_queue.c"
+        "http/http_request.c"
+        "mqtt/mqtt_client.c"
+        "os/os_log.c"
+        "os/os_time.c"
+    INCLUDE_DIRS
+        "."
+        "core"
+        "http"
+        "mqtt"
+        "os"
+)

@@ -6,8 +6,8 @@
 
 #include "app_config.h"
 #include "core/message_queue.h"
-#include "os_log/os_log.h"
-#include "os_log/os_time.h"
+#include "os/os_log.h"
+#include "os/os_time.h"
 
 typedef struct
 {
@@ -26,7 +26,7 @@ void app_main(void)
 
     if (!message_queue_init(&g_main_queue, "main_queue", APP_CFG_MESSAGE_QUEUE_DEPTH))
     {
-        OS_LOGE("APP", "Failed to initialize message queue");
+        os_log_print(OS_LOG_LEVEL_ERROR, "APP", "Failed to initialize message queue");
         return;
     }
 
@@ -40,7 +40,7 @@ void app_main(void)
 
     if (created != pdPASS)
     {
-        OS_LOGE("APP", "Failed to create consumer task");
+        os_log_print(OS_LOG_LEVEL_ERROR, "APP", "Failed to create consumer task");
         return;
     }
 
@@ -54,7 +54,7 @@ void app_main(void)
 
     if (created != pdPASS)
     {
-        OS_LOGE("APP", "Failed to create producer task");
+        os_log_print(OS_LOG_LEVEL_ERROR, "APP", "Failed to create producer task");
     }
 }
 
@@ -69,7 +69,7 @@ static void producer_task(void *args)
         TaskPayload *payload = pvPortMalloc(sizeof(*payload));
         if (payload == NULL)
         {
-            OS_LOGW("QR", "Allocation failed, retrying");
+            os_log_print(OS_LOG_LEVEL_WARN, "QR", "Allocation failed, retrying");
             vTaskDelay(period_ticks);
             continue;
         }
@@ -83,12 +83,12 @@ static void producer_task(void *args)
 
         if (!sent)
         {
-            OS_LOGW("QR", "Queue full, dropping seq %lu", (unsigned long)payload->sequence);
+            os_log_print(OS_LOG_LEVEL_WARN, "QR", "Queue full, dropping seq %lu", (unsigned long)payload->sequence);
             vPortFree(payload);
         }
         else
         {
-            OS_LOGD("QR", "Sent seq %lu", (unsigned long)payload->sequence);
+            os_log_print(OS_LOG_LEVEL_DEBUG, "QR", "Sent seq %lu", (unsigned long)payload->sequence);
         }
 
         vTaskDelay(period_ticks);
@@ -110,7 +110,8 @@ static void consumer_task(void *args)
             if (payload != NULL)
             {
                 const uint32_t latency_ms = os_time_elapsed_ms(payload->timestamp_us);
-                OS_LOGI(
+                os_log_print(
+                    OS_LOG_LEVEL_INFO,
                     "MAIN",
                     "Received seq %lu from %s after %lu ms",
                     (unsigned long)payload->sequence,
@@ -120,7 +121,7 @@ static void consumer_task(void *args)
             }
             else
             {
-                OS_LOGW("MAIN", "Received NULL payload from %s", sender_name);
+                os_log_print(OS_LOG_LEVEL_WARN, "MAIN", "Received NULL payload from %s", sender_name);
             }
         }
     }

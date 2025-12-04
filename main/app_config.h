@@ -25,7 +25,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#include "os_log/os_log.h"
+#include "os/os_log.h"
 
 static inline TickType_t app_cfg_ms_to_ticks(uint32_t ms)
 {
