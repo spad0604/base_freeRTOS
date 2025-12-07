@@ -7,10 +7,20 @@ idf_component_register(
         "mqtt/mqtt_client.c"
         "os/os_log.c"
         "os/os_time.c"
+        "wifi/wifi_handle.c"
+        "bluetooth/bluetooth_handle.c"
     INCLUDE_DIRS
         "."
         "core"
         "http"
         "mqtt"
         "os"
+        "wifi"
+        "bluetooth"
+    REQUIRES
+        esp_wifi
+        nvs_flash
+        bt
+        esp_http_client
+        mqtt
 )

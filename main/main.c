@@ -3,11 +3,14 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_err.h"
 
 #include "app_config.h"
 #include "core/message_queue.h"
 #include "os/os_log.h"
 #include "os/os_time.h"
+#include "wifi/wifi_handle.h"
+#include "bluetooth/bluetooth_handle.h"
 
 typedef struct
 {
@@ -23,6 +26,20 @@ static void producer_task(void *args);
 void app_main(void)
 {
     os_log_set_level(APP_CFG_LOG_LEVEL);
+
+#if APP_CFG_WIFI_ENABLED
+    if (wifi_handle_start_sta() != ESP_OK)
+    {
+        os_log_print(OS_LOG_LEVEL_ERROR, "APP", "Failed to start WiFi");
+    }
+#endif
+
+#if APP_CFG_BLUETOOTH_ENABLED
+    if (bluetooth_handle_start() != ESP_OK)
+    {
+        os_log_print(OS_LOG_LEVEL_ERROR, "APP", "Failed to start BLE");
+    }
+#endif
 
     if (!message_queue_init(&g_main_queue, "main_queue", APP_CFG_MESSAGE_QUEUE_DEPTH))
     {

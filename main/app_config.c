@@ -1,7 +1,4 @@
-#ifndef APP_CONFIG_H
-#define APP_CONFIG_H
+#include "app_config.h"
 
-#define APP_CFG_LOG_DEBUG_OFF
-#define CONFIG_IDF_TARGET_ESP32
-
-#endif // APP_CONFIG_H
+/* Configuration is provided via macros in app_config.h.
+ * This translation unit exists to keep the component list stable. */
